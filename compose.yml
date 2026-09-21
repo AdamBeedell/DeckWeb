@@ -14,3 +14,13 @@ services:
       SCRYFALL_USER_AGENT: ${SCRYFALL_USER_AGENT:-DeckWeb/1.0 (self-hosted)}
     volumes:
       - /DATA/AppData/deckweb:/data             # ZimaOS app data path; root FS is read-only
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: deckweb-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on:
+      - deckweb
