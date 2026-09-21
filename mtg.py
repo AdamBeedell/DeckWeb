@@ -1,6 +1,7 @@
 """Everything Magic-specific lives here: decklist parsing, the Scryfall card DB,
 print lookups, image caching and Scryfall query tags. The rest of the app only
 sees generic items and tags."""
+import gzip
 import json
 import os
 import re
@@ -176,6 +177,24 @@ def split_types(type_line):
     return " ".join(sorted(sup)), " ".join(sorted(typ)), " ".join(sorted(sub))
 
 
+def iter_bulk(path):
+    """Yield card objects from a bulk file: JSON Lines (current) or a JSON array (old),
+    optionally gzipped."""
+    with open(path, "rb") as raw:
+        magic = raw.read(2)
+    opener = gzip.open if magic == b"\x1f\x8b" else open
+    with opener(path, "rb") as f:
+        head = f.read(64).lstrip()
+        f.seek(0)
+        if head.startswith(b"["):
+            yield from ijson.items(f, "item")
+            return
+        for line in f:
+            line = line.strip().rstrip(b",")
+            if line and line not in (b"[", b"]"):
+                yield json.loads(line)
+
+
 def load_bulk(force=False):
     """Download Scryfall 'Oracle Cards' bulk data and rebuild the cards tables."""
     if not _bulk_lock.acquire(blocking=False):
@@ -188,8 +207,12 @@ def load_bulk(force=False):
             return
         bulk_status.update(state="loading", message="Downloading card data from Scryfall…")
         info = scryfall_get(f"{SCRYFALL}/bulk-data/oracle-cards").json()
-        path = os.path.join(db.DATA_DIR, "oracle_cards.json")
-        with _session.get(info["download_uri"], stream=True, timeout=300) as r:
+        # Scryfall moved bulk files to JSON Lines (July 2026); keep the old key as a fallback.
+        url = info.get("jsonl_download_uri") or info.get("download_uri")
+        if not url:
+            raise RuntimeError(info.get("details") or f"no download link in Scryfall's reply (fields: {', '.join(info)})")
+        path = os.path.join(db.DATA_DIR, "oracle_cards.download")
+        with _session.get(url, stream=True, timeout=300) as r:
             r.raise_for_status()
             with open(path, "wb") as f:
                 for chunk in r.iter_content(1 << 20):
@@ -199,23 +222,22 @@ def load_bulk(force=False):
         con.execute("DELETE FROM card_names")
         skip = {"token", "double_faced_token", "emblem", "art_series", "vanguard", "scheme", "planar"}
         n = 0
-        with open(path, "rb") as f:
-            for c in ijson.items(f, "item"):
-                if c.get("layout") in skip or not c.get("oracle_id"):
-                    continue
-                faces = c.get("card_faces") or []
-                type_line = c.get("type_line") or " // ".join(x.get("type_line", "") for x in faces)
-                text = c.get("oracle_text") or "\n//\n".join(x.get("oracle_text", "") for x in faces)
-                cost = c.get("mana_cost") or " // ".join(x.get("mana_cost", "") for x in faces)
-                sup, typ, sub = split_types(type_line)
-                con.execute("INSERT OR REPLACE INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", (
-                    c["oracle_id"], c["name"], sup, typ, sub, type_line, cost, float(c.get("cmc") or 0),
-                    "".join(c.get("color_identity") or []), " ".join(c.get("keywords") or []), text, c["id"]))
-                verb = "OR IGNORE" if c.get("set_type") == "funny" else "OR REPLACE"
-                for k in name_keys(c["name"]):
-                    con.execute(f"INSERT {verb} INTO card_names VALUES (?,?)", (k, c["oracle_id"]))
-                store_print(con, c)
-                n += 1
+        for c in iter_bulk(path):
+            if c.get("layout") in skip or not c.get("oracle_id"):
+                continue
+            faces = c.get("card_faces") or []
+            type_line = c.get("type_line") or " // ".join(x.get("type_line", "") for x in faces)
+            text = c.get("oracle_text") or "\n//\n".join(x.get("oracle_text", "") for x in faces)
+            cost = c.get("mana_cost") or " // ".join(x.get("mana_cost", "") for x in faces)
+            sup, typ, sub = split_types(type_line)
+            con.execute("INSERT OR REPLACE INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", (
+                c["oracle_id"], c["name"], sup, typ, sub, type_line, cost, float(c.get("cmc") or 0),
+                "".join(c.get("color_identity") or []), " ".join(c.get("keywords") or []), text, c["id"]))
+            verb = "OR IGNORE" if c.get("set_type") == "funny" else "OR REPLACE"
+            for k in name_keys(c["name"]):
+                con.execute(f"INSERT {verb} INTO card_names VALUES (?,?)", (k, c["oracle_id"]))
+            store_print(con, c)
+            n += 1
         try:
             con.execute("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')")
         except Exception:
