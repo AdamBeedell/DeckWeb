@@ -8,7 +8,11 @@ const Chart = (() => {
   const nameKeys = n => [norm(n), ...(n.includes("//") ? n.split("//").map(norm) : [])];
   const SLOT = 15, LABEL = 190, COL_W = 200, ROW_H = 19, HEAD_H = 64;
 
-  let svg, root, layers, zoom, cb = {}, model = null, opts = {}, pin = null, hover = null;
+  let svg, root, layers, zoom, cb = {}, model = null, opts = {}, pin = null, hover = null, drag = null;
+
+  // Each tag gets its own stable colour: hues spaced by the golden angle, keyed on tag id.
+  const darkMode = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const tagColor = t => d3.hsl((t.id * 137.508) % 360, 0.62, darkMode() ? 0.66 : 0.42).formatHex();
 
   function init(svgEl, callbacks) {
     cb = callbacks;
@@ -144,7 +148,7 @@ const Chart = (() => {
     layers.edges.selectAll("path").data(model.edges, e => e.key).join(
       en => en.append("path").attr("class", "edge").attr("opacity", 0).attr("d", edgePath),
       up => up, ex => ex.transition(t).attr("opacity", 0).remove())
-      .classed("card", e => !!e.to).classed("mutual", e => !!e.mutual)
+      .classed("card", e => !!e.to).classed("mutual", e => !!e.mutual).style("stroke", e => tagColor(e.tag))
       .transition(t).attr("opacity", 1).attr("d", edgePath);
 
     const hubs = layers.hubs.selectAll("g.hub").data(model.hubs, h => h.id).join(en => {
@@ -153,7 +157,8 @@ const Chart = (() => {
       g.append("text").attr("dy", "0.32em");
       return g;
     }, up => up, ex => ex.transition(t).attr("opacity", 0).remove());
-    hubs.select("text").text(h => `#${h.name}`)
+    hubs.select("circle").style("fill", tagColor);
+    hubs.select("text").style("fill", tagColor).text(h => `#${h.name}`)
       .attr("x", h => (left(h.a) ? -9 : 9)).attr("text-anchor", h => (left(h.a) ? "end" : "start"));
     hubs.on("mouseenter", (ev, h) => setHover({ type: "tag", tag: h })).on("mouseleave", () => setHover(null))
       .on("click", (ev, h) => { ev.stopPropagation(); togglePin({ type: "tag", id: h.id }); })
@@ -168,7 +173,7 @@ const Chart = (() => {
     }, up => up, ex => ex.remove());
     heads.select("image").attr("href", g => g.tag?.target?.print_id ? `/images/${g.tag.target.print_id}.jpg` : null)
       .attr("display", g => (g.tag?.target?.print_id ? null : "none"));
-    heads.select(".head-name").attr("x", g => (g.tag?.target?.print_id ? 44 : 0))
+    heads.select(".head-name").attr("x", g => (g.tag?.target?.print_id ? 44 : 0)).style("fill", g => (g.tag ? tagColor(g.tag) : null))
       .text(g => (g.tag ? (g.tag.target ? "→ " : "#") : "") + (g.label.length > 20 ? g.label.slice(0, 19) + "…" : g.label));
     heads.select(".head-count").attr("x", g => (g.tag?.target?.print_id ? 44 : 0)).text(g => `${g.insts.length}`);
     heads.on("mouseenter", (ev, g) => g.tag && setHover({ type: "tag", tag: g.tag })).on("mouseleave", () => setHover(null))
@@ -193,12 +198,13 @@ const Chart = (() => {
     nodes.select(".quick").attr("x", -34)
       .classed("on", i => o.quickTag != null && [...i.node.tags].some(t => t.id === o.quickTag))
       .attr("display", o.quickTag != null ? null : "none");
-    nodes.on("mouseenter", (ev, i) => { setHover({ type: "node", node: i.node }); cb.onHoverImage?.(i.node, ev); })
-      .on("mousemove", (ev, i) => cb.onHoverImage?.(i.node, ev))
+    nodes.on("mouseenter", (ev, i) => { setHover({ type: "node", node: i.node }); if (!drag?.line) cb.onHoverImage?.(i.node, ev); })
+      .on("mousemove", (ev, i) => { if (!drag?.line) cb.onHoverImage?.(i.node, ev); })
       .on("mouseleave", () => { setHover(null); cb.onHoverImage?.(null); })
       .on("click", (ev, i) => { ev.stopPropagation(); togglePin({ type: "node", itemId: i.node.items[0].id }); });
     nodes.select(".tagbtn").on("click", (ev, i) => { ev.stopPropagation(); cb.onTagMenu?.(i.node, ev); });
     nodes.select(".quick").on("click", (ev, i) => { ev.stopPropagation(); cb.onQuickTag?.(i.node); });
+    nodes.call(d3.drag().clickDistance(4).on("start", dragStart).on("drag", dragMove).on("end", dragEnd));
     nodes.transition(t).attr("opacity", 1).attr("transform", nodeTf);
 
     applyFocus();
@@ -218,6 +224,46 @@ const Chart = (() => {
     if (opts.mode !== "circle") k = Math.max(k, 0.85); // columns stay readable; pan to see more
     const tx = opts.mode === "circle" ? box.width / 2 : 20 - x0 * k, ty = opts.mode === "circle" ? box.height / 2 : 20 - y0 * k;
     svg.transition(t).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+  }
+
+  // ------------------------------------------------------------------ drag to connect
+  // Drag from an item onto another item (points it at that card) or onto a hub/column header (adds the tag).
+  const pos = i => (opts.mode === "circle" ? i.ring : i.cols);
+
+  function dropTarget(se, from) {
+    const p = se.changedTouches ? se.changedTouches[0] : se;
+    const g = document.elementFromPoint(p.clientX, p.clientY)?.closest("g.node, g.hub, g.head");
+    if (!g) return null;
+    const d = d3.select(g).datum();
+    if (g.classList.contains("node")) return d.node === from ? null : { type: "node", node: d.node, el: g };
+    if (g.classList.contains("hub")) return { type: "tag", tag: d, el: g };
+    return d.tag ? { type: "tag", tag: d.tag, el: g } : null;
+  }
+  function dragStart(ev, inst) { drag = { inst, x0: ev.x, y0: ev.y, line: null, target: null }; }
+  function dragMove(ev) {
+    if (!drag) return;
+    if (!drag.line) {
+      if (Math.hypot(ev.x - drag.x0, ev.y - drag.y0) < 6) return;
+      const p = pos(drag.inst);
+      drag.line = root.append("line").attr("class", "drag-line").attr("x1", p.x).attr("y1", p.y);
+      svg.classed("dragging", true);
+      cb.onHoverImage?.(null);
+    }
+    drag.line.attr("x2", ev.x).attr("y2", ev.y);
+    const t = dropTarget(ev.sourceEvent, drag.inst.node);
+    if (drag.target?.el !== t?.el) {
+      drag.target?.el.classList.remove("drop-target");
+      t?.el.classList.add("drop-target");
+      drag.target = t;
+    }
+  }
+  function dragEnd() {
+    if (!drag) return;
+    const { line, target, inst } = drag;
+    drag = null;
+    target?.el.classList.remove("drop-target");
+    svg.classed("dragging", false);
+    if (line) { line.remove(); if (target) cb.onConnect?.(inst.node, target); }
   }
 
   // ------------------------------------------------------------------ focus
@@ -269,5 +315,5 @@ const Chart = (() => {
   }
   const reduced = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  return { init, render, setPin, getModel: () => model, norm, nameKeys };
+  return { init, render, setPin, getModel: () => model, norm, nameKeys, tagColor };
 })();

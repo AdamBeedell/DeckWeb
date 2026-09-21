@@ -81,7 +81,10 @@
       <label class="check"><input type="radio" name="impMode" value="plain"> Plain list</label>
       <label class="check"><input type="checkbox" id="impTags" checked> Keep tags and categories from the list</label>
     </div>
-    <label>Items, one per line
+    <label>Load a file <span class="muted">(a DeckWeb export .zip, its tags.json, or any decklist .txt)</span>
+      <input type="file" id="impFile" accept=".zip,.json,.txt,.dek,.dec">
+    </label>
+    <label>Or paste items, one per line
       <textarea id="impText" rows="14" spellcheck="false" placeholder="1 Sol Ring (C21) 263&#10;8x Forest&#10;&#10;#ramp&#10;1x Cultivate"></textarea>
     </label>
     <div id="impReport" class="report"></div>

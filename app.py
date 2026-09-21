@@ -215,6 +215,38 @@ def create_list():
     return jsonify(id=list_id, warnings=warnings)
 
 
+@app.post("/api/lists/unpack")
+@auth()
+def unpack_file():
+    """Turn an uploaded export (.zip or tags.json) or decklist file into pasteable text.
+    The text then goes through the normal check-and-save flow. Images in a zip are ignored."""
+    f = request.files.get("file")
+    if not f:
+        return err("Choose a file to load.")
+    raw, name = f.read(20_000_000), os.path.splitext(f.filename or "")[0]
+    if raw[:2] == b"PK":
+        try:
+            z = zipfile.ZipFile(io.BytesIO(raw))
+        except zipfile.BadZipFile:
+            return err("That zip file couldn't be opened.")
+        files = z.namelist()
+        if "tags.json" in files:
+            raw = z.read("tags.json")
+        elif "list.txt" in files:
+            return jsonify(name=name, mode=None, text=z.read("list.txt").decode("utf-8", "replace"))
+        else:
+            return err("That zip isn't a DeckWeb export: it has no tags.json or list.txt.")
+    try:
+        bundle = json.loads(raw)
+        items = bundle["items"]
+    except (ValueError, KeyError, TypeError):
+        return jsonify(name=name, mode=None, text=raw.decode("utf-8", "replace"))  # plain decklist text
+    groups = [{"qty": int(i.get("qty") or 1), "name": i["name"], "set": i.get("set"),
+               "number": i.get("number"), "tags": i.get("tags") or []} for i in items if i.get("name")]
+    mode = bundle.get("mode") or ("mtg" if any(gr["set"] for gr in groups) else None)
+    return jsonify(name=bundle.get("list") or name, mode=mode, text=mtg.export_lines(groups, "archidekt"))
+
+
 @app.get("/api/lists/<int:list_id>")
 @auth()
 def get_list(list_id):
@@ -257,7 +289,7 @@ def delete_list(list_id):
 # --------------------------------------------------------------------------- tags
 
 def get_or_create_tag(con, list_id, name, source="manual"):
-    name = name.strip().lstrip("#").strip()[:60]
+    name = name.strip().lstrip("#").strip()[:150]
     if not name:
         raise ValueError("Tag names can't be empty.")
     key = mtg.normalize(name)  # 'Sneak Attack' and 'sneak-attack' are the same tag
@@ -424,7 +456,7 @@ def export(list_id):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("list.txt", mtg.export_lines(groups, fmt))
         z.writestr("tags.json", json.dumps({
-            "list": data["name"], "tags": [t["name"] for t in data["tags"]],
+            "list": data["name"], "mode": lst["mode"], "tags": [t["name"] for t in data["tags"]],
             "items": [{k: gr[k] for k in ("qty", "name", "set", "number", "tags")} for gr in groups]}, indent=2))
         out = io.StringIO()
         w = csv.writer(out)

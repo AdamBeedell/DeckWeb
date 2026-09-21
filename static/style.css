@@ -92,7 +92,7 @@ label.check input { width: auto; }
 
 /* chart */
 .edge { fill: none; stroke: var(--tag); stroke-opacity: .28; stroke-width: 1; transition: stroke-opacity .25s, stroke-width .25s, opacity .25s; }
-.edge.card { stroke: var(--link); stroke-opacity: .5; }
+.edge.card { stroke-opacity: .6; stroke-width: 1.4; }
 .edge.mutual { stroke-width: 2.2; }
 .node .dot { fill: var(--ink); transition: fill .25s; }
 .node .name { font-size: 11px; fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; cursor: pointer; }
@@ -101,11 +101,18 @@ label.check input { width: auto; }
 .node .quick { fill: var(--panel); stroke: var(--muted); cursor: pointer; }
 .node .quick.on { fill: var(--tag); stroke: var(--tag); }
 .node, .hub, .head { transition: opacity .25s; }
-.hub circle { fill: var(--tag); }
+.hub circle { fill: var(--tag); stroke: var(--bg); stroke-width: 1.5px; }
 .hub text { font-size: 11px; font-weight: 600; fill: var(--tag); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; cursor: pointer; }
 .head { cursor: pointer; }
 .head .head-name { font-size: 13px; font-weight: 600; fill: var(--ink); }
 .head .head-count { font-size: 11px; fill: var(--muted); }
+
+/* drag to connect */
+.drag-line { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 5 4; pointer-events: none; }
+.dragging, .dragging * { cursor: crosshair !important; }
+.drop-target circle { stroke: var(--ink); stroke-width: 3px; }
+.drop-target text { font-weight: 700; }
+.swatch { display: inline-block; width: .7em; height: .7em; border-radius: 50%; margin-right: .4em; vertical-align: baseline; }
 
 /* ring vs columns */
 .head { visibility: hidden; }

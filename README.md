@@ -8,6 +8,7 @@ A small self-hosted site for mapping how items in a list connect. It was built f
 - **Columns view:** one column per tag. Nodes animate between the two layouts.
 - **Hover** lights up connections and dims everything else. **Click** keeps them lit and opens the sidebar.
 - **Tagging:** use the `#` beside any item, the checkboxes in the sidebar, or Quick-tag (pick a tag, then tick items).
+- **Drag to connect:** drag from an item onto another item to point it at that card, or onto a hub or column header to add that tag. Each tag has its own colour.
 - **Scryfall:** Tag from Scryfall runs any search (`otag:ramp`, `o:"sacrifice a creature"`) and tags the matches in your list.
 - **Export:** a zip containing a decklist (Moxfield, Archidekt, TappedOut or plain), tags as JSON and CSV, and card images.
 
@@ -38,6 +39,8 @@ DATA_DIR=./data ADMIN_PASSWORD=changeme python app.py   # http://localhost:8080
 ```
 
 ## Pasting lists
+
+New list also loads a file: a DeckWeb export `.zip` (tags and chosen printings come back; images are re-fetched), its `tags.json`, or any decklist `.txt`.
 
 - **Quantities:** `8x Forest`, `8 Forest` and `8 x Forest` all give 8 separate Forest items. Identical copies stack into one ×8 node unless you untick *Stack copies*.
 - **Printings:** `(SET) 123` picks that exact printing. Otherwise the card's default printing is used.

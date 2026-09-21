@@ -123,6 +123,13 @@ function openTagMenu(node, ev) {
 document.addEventListener("click", ev => { if (!$("#popover").contains(ev.target)) $("#popover").hidden = true; });
 document.addEventListener("keydown", ev => { if (ev.key === "Escape") $("#popover").hidden = true; });
 
+// drag-to-connect: onto a card = point at it; onto a hub or column header = add that tag
+function connect(src, target) {
+  const done = target.type === "node" ? `${src.name} now points to ${target.node.name}.` : `Tagged ${src.name} #${target.tag.name}.`;
+  const args = target.type === "node" ? { tagName: target.node.name, on: true } : { tagId: target.tag.id, on: true };
+  setTag(src, args).then(() => toast(done)).catch(fail);
+}
+
 function quickTag(node) {
   const id = state.opts.quickTag;
   setTag(node, { tagId: id, on: ![...node.tags].some(t => t.id === id) }).catch(fail);
@@ -154,7 +161,7 @@ function renderSidebar(sel = state.sel, model = Chart.getModel()) {
     const t = sel.tag, members = [...t.members].sort((a, b) => a.name.localeCompare(b.name));
     sb.innerHTML = `
       <p class="kicker">${t.target ? "Points at a card" : "Tag"}</p>
-      <h2>#${esc(t.name)}</h2>
+      <h2><span class="swatch" style="background:${Chart.tagColor(t)}"></span>#${esc(t.name)}</h2>
       ${t.target ? `<button class="card-link" data-item="${t.target.items[0].id}">${thumb(t.target)} ${esc(t.target.name)}</button>` : ""}
       <p class="muted">${members.reduce((s, n) => s + n.items.length, 0)} items</p>
       <ul class="vlist">${members.map(nodeRow).join("")}</ul>
@@ -195,9 +202,9 @@ function overview(sb, model) {
     <h2>${esc(d.name)}</h2>
     <p class="muted">${d.items.length} items, ${d.tags.length} of 100 tags. Hover to trace connections; click to keep them lit.</p>
     <h3>Tags</h3>
-    <ul class="vlist tags">${d.tags.map(t => `<li><button class="link" data-tag="${t.id}">${isCard(t) ? "→ " : "#"}${esc(t.name)}</button><span class="muted">${count(t)}</span></li>`).join("") || `<li class="muted">No tags yet. Use the # beside any item.</li>`}</ul>
+    <ul class="vlist tags">${d.tags.map(t => `<li><button class="link" data-tag="${t.id}"><span class="swatch" style="background:${Chart.tagColor(t)}"></span>${isCard(t) ? "→ " : "#"}${esc(t.name)}</button><span class="muted">${count(t)}</span></li>`).join("") || `<li class="muted">No tags yet. Use the # beside any item.</li>`}</ul>
     <input id="sbNewTag" placeholder="New tag, then Enter" maxlength="60">
-    <p class="muted small">A tag named after a card in this list draws a line to that card.</p>
+    <p class="muted small">A tag named after a card in this list draws a line to that card. Drag from one item onto another item or a tag to connect them.</p>
     <div class="row"><button id="listRename">Rename list</button><button id="listDelete" class="danger">Delete list</button></div>`;
   sb.querySelectorAll("[data-tag]").forEach(b => b.onclick = ev => { ev.stopPropagation(); Chart.setPin({ type: "tag", id: Number(b.dataset.tag) }); });
   $("#sbNewTag").onkeydown = ev => {
@@ -233,6 +240,23 @@ function selectLine(n) {
   ta.focus(); ta.setSelectionRange(start, start + lines[n - 1].length);
   ta.scrollTop = (n - 3) * parseFloat(getComputedStyle(ta).lineHeight);
 }
+// load an exported zip / tags.json / text file into the box, then check it as usual
+$("#impFile").onchange = async ev => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const fd = new FormData(); fd.append("file", file);
+  try {
+    const res = await fetch("/api/lists/unpack", { method: "POST", headers: { "X-API-Key": state.key }, body: fd });
+    const r = await res.json();
+    if (!res.ok) throw new Error(r.error);
+    $("#impText").value = r.text;
+    if (!$("#impName").value) $("#impName").value = r.name || "";
+    if (r.mode) document.querySelector(`input[name=impMode][value=${r.mode}]`).checked = true;
+    $("#impCheck").click();
+  } catch (e) { fail(e); }
+  ev.target.value = "";
+};
+
 function openImport() { $("#impReport").innerHTML = ""; $("#impDrop").hidden = true; $("#importDlg").showModal(); }
 $("#newListBtn").onclick = openImport;
 $("#emptyNewBtn").onclick = openImport;
@@ -335,6 +359,7 @@ Chart.init($("#chart"), {
   onTagMenu: openTagMenu,
   onQuickTag: quickTag,
   onHoverImage: hoverImage,
+  onConnect: connect,
 });
 window.addEventListener("resize", () => draw(true));
 start();
