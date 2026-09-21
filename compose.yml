@@ -6,7 +6,7 @@ services:
     container_name: deckweb
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "9376:9376"
     environment:
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}          # required on first run
