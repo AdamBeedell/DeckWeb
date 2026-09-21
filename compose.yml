@@ -1,0 +1,16 @@
+# Portainer: Stacks > Add stack > paste this, set the environment variables below in the UI.
+services:
+  deckweb:
+    build: .
+    image: deckweb:latest
+    container_name: deckweb
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}          # required on first run
+      SECRET_KEY: ${SECRET_KEY:-}               # optional; auto-generated into /data if empty
+      SCRYFALL_USER_AGENT: ${SCRYFALL_USER_AGENT:-DeckWeb/1.0 (self-hosted)}
+    volumes:
+      - /DATA/AppData/deckweb:/data             # ZimaOS app data path; root FS is read-only

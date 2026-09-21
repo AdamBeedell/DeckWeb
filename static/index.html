@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DeckWeb</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='38' fill='none' stroke='%23346d8a' stroke-width='10'/><circle cx='50' cy='12' r='10' fill='%23c2872a'/></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Sign in -->
+<section id="login" class="login" hidden>
+  <form id="loginForm" class="login-card">
+    <h1>DeckWeb</h1>
+    <p class="muted">Map how the cards in a list connect.</p>
+    <label>Username <input name="username" autocomplete="username" required></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <p id="loginError" class="error" role="alert"></p>
+    <button class="primary" type="submit">Sign in</button>
+  </form>
+</section>
+
+<!-- App -->
+<section id="app" hidden>
+  <header class="bar">
+    <span class="brand">DeckWeb</span>
+    <select id="listSelect" aria-label="List"></select>
+    <button id="newListBtn">New list</button>
+    <span class="sep"></span>
+    <div class="seg" role="group" aria-label="Layout">
+      <button id="modeCircle" aria-pressed="true">Ring</button>
+      <button id="modeCols" aria-pressed="false">Columns</button>
+    </div>
+    <label class="check"><input type="checkbox" id="stackToggle" checked> Stack copies</label>
+    <label class="check"><input type="checkbox" id="dupToggle"> Repeat multi-tag items</label>
+    <label class="check">Quick-tag <select id="quickTag"><option value="">off</option></select></label>
+    <span class="grow"></span>
+    <button id="queryBtn">Tag from Scryfall</button>
+    <details class="menu" id="exportMenu">
+      <summary>Export</summary>
+      <div class="menu-body">
+        <button data-format="moxfield">Moxfield text + tags + images</button>
+        <button data-format="archidekt">Archidekt text + tags + images</button>
+        <button data-format="tappedout">TappedOut text + tags + images</button>
+        <button data-format="plain">Plain text + tags + images</button>
+      </div>
+    </details>
+    <details class="menu" id="userMenu">
+      <summary id="userName">Account</summary>
+      <div class="menu-body">
+        <button id="accountBtn">API key and password</button>
+        <button id="adminBtn" hidden>Admin</button>
+        <button id="logoutBtn">Sign out</button>
+      </div>
+    </details>
+  </header>
+  <main class="main">
+    <div class="stage">
+      <svg id="chart" aria-label="Connection chart"></svg>
+      <div id="emptyState" class="empty" hidden>
+        <p>No list yet.</p>
+        <button class="primary" id="emptyNewBtn">Paste a list</button>
+      </div>
+    </div>
+    <aside id="sidebar" class="sidebar"></aside>
+  </main>
+</section>
+
+<img id="hoverImg" class="hover-img" alt="" hidden>
+<div id="popover" class="popover" hidden></div>
+<div id="toast" class="toast" role="status"></div>
+
+<!-- New list -->
+<dialog id="importDlg">
+  <form method="dialog" class="dlg">
+    <h2>New list</h2>
+    <label>Name <input id="impName" required maxlength="100"></label>
+    <div class="row">
+      <label class="check"><input type="radio" name="impMode" value="mtg" checked> Magic decklist</label>
+      <label class="check"><input type="radio" name="impMode" value="plain"> Plain list</label>
+      <label class="check"><input type="checkbox" id="impTags" checked> Keep tags and categories from the list</label>
+    </div>
+    <label>Items, one per line
+      <textarea id="impText" rows="14" spellcheck="false" placeholder="1 Sol Ring (C21) 263&#10;8x Forest&#10;&#10;#ramp&#10;1x Cultivate"></textarea>
+    </label>
+    <div id="impReport" class="report"></div>
+    <div class="actions">
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button type="button" id="impCheck">Check list</button>
+      <button type="button" id="impDrop" hidden>Save without problem lines</button>
+      <button type="button" class="primary" id="impSave">Save list</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Scryfall query tag -->
+<dialog id="queryDlg">
+  <form method="dialog" class="dlg">
+    <h2>Tag cards from a Scryfall search</h2>
+    <p class="muted">Every card in this list that matches the search gets the tag. Try <code>otag:ramp</code> or <code>o:"sacrifice a creature"</code>.</p>
+    <label>Scryfall search <input id="qQuery" placeholder="otag:ramp"></label>
+    <label>Tag name <input id="qTag" placeholder="ramp"></label>
+    <label class="check"><input type="checkbox" id="qIdentity" checked> Limit to the commander's colours (faster for big searches)</label>
+    <p id="qResult" class="muted"></p>
+    <div class="actions">
+      <button value="cancel" formnovalidate>Close</button>
+      <button type="button" class="primary" id="qRun">Tag matches</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Art picker -->
+<dialog id="artDlg">
+  <form method="dialog" class="dlg wide">
+    <h2 id="artTitle">Choose art</h2>
+    <div id="artGrid" class="art-grid"></div>
+    <div class="actions"><button value="cancel">Close</button></div>
+  </form>
+</dialog>
+
+<!-- Account -->
+<dialog id="accountDlg">
+  <form method="dialog" class="dlg">
+    <h2>API key and password</h2>
+    <p class="muted">Scripts can call the API with the header <code>X-API-Key</code>. Making a new key signs out every other device.</p>
+    <label>Your API key <input id="accKey" readonly></label>
+    <div class="row">
+      <button type="button" id="accCopy">Copy key</button>
+      <button type="button" id="accRegen">Make a new key</button>
+    </div>
+    <label>New password <input id="accPw" type="password" autocomplete="new-password" minlength="6"></label>
+    <div class="actions">
+      <button value="cancel" formnovalidate>Close</button>
+      <button type="button" class="primary" id="accPwSave">Change password</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Admin -->
+<dialog id="adminDlg">
+  <form method="dialog" class="dlg wide">
+    <h2>Admin</h2>
+    <p id="admCards" class="muted"></p>
+    <button type="button" id="admRefresh">Refresh card database</button>
+    <h3>Users and lists</h3>
+    <div id="admUsers"></div>
+    <h3>Add a user</h3>
+    <div class="row">
+      <input id="admName" placeholder="Username" aria-label="Username">
+      <input id="admPw" type="password" placeholder="Password" aria-label="Password">
+      <label class="check"><input type="checkbox" id="admIsAdmin"> Admin</label>
+      <button type="button" id="admAdd">Add user</button>
+    </div>
+    <div class="actions"><button value="cancel">Close</button></div>
+  </form>
+</dialog>
+
+<script src="/static/d3.min.js"></script>
+<script src="/static/chart.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
